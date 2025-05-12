@@ -4,45 +4,6 @@ Theme Name: BuddyBoss Child
 Description: A child theme of BuddyBoss Theme. To ensure easy updates, make your own edits in this theme.
 */
 
-// Fix WooCommerce data store registration conflicts
-add_action('init', function() {
-    // Check if we're in the admin or frontend
-    if (is_admin() || (defined('REST_REQUEST') && REST_REQUEST)) {
-        // Ensure scripts are loaded in proper order
-        add_filter('script_loader_tag', function($tag, $handle, $src) {
-            // Add defer to non-critical scripts to prevent timing conflicts
-            if (strpos($handle, 'wc-') !== false && strpos($handle, 'data') === false) {
-                return str_replace(' src', ' defer src', $tag);
-            }
-            return $tag;
-        }, 10, 3);
-    }
-}, 5);
-
-// Fix WooCommerce data store loading conflicts
-add_action('wp_enqueue_scripts', function() {
-    // Ensure WooCommerce scripts load in correct order
-    if (function_exists('is_woocommerce') && is_woocommerce()) {
-        // Remove duplicate enqueues
-        global $wp_scripts;
-        
-        if (isset($wp_scripts->registered['wp-data'])) {
-            $wp_scripts->registered['wp-data']->deps = array_unique($wp_scripts->registered['wp-data']->deps);
-        }
-    }
-}, 15);
-
-// Prevent multiple initializations of WooCommerce components
-add_action('woocommerce_init', function() {
-    // Check if data stores are already registered
-    static $stores_initialized = false;
-    
-    if (!$stores_initialized) {
-        $stores_initialized = true;
-        do_action('woocommerce_stores_initialized');
-    }
-}, 5);
-
 /**
  * Enqueues scripts and styles for child theme front-end.
  */
@@ -52,23 +13,6 @@ function buddyboss_theme_child_scripts_styles() {
     
     // Enqueue child theme style
     wp_enqueue_style('buddyboss-child-css', get_stylesheet_directory_uri() . '/assets/css/custom.css', array('buddyboss-theme'), time());
-    
-    // Enqueue custom JavaScript with proper dependencies
-    if (class_exists('WooCommerce')) {
-        wp_enqueue_script(
-            'buddyboss-child-woocommerce-fixes',
-            get_stylesheet_directory_uri() . '/assets/js/woocommerce-fixes.js',
-            array('jquery', 'wp-data'),
-            time(),
-            true
-        );
-        
-        // Localize script with necessary data
-        wp_localize_script('buddyboss-child-woocommerce-fixes', 'buddyboss_child_ajax', array(
-            'ajax_url' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce('buddyboss_child_nonce')
-        ));
-    }
 }
 add_action('wp_enqueue_scripts', 'buddyboss_theme_child_scripts_styles', 9999);
 
@@ -130,10 +74,12 @@ function alternate_variant_dropdown_text($args) {
 }
 add_filter('woocommerce_dropdown_variation_attribute_options_args', 'alternate_variant_dropdown_text', 10, 2);
 
-// Change vendor biography title
-add_filter('dokan_vendor_biography_title', function() {
-    return 'My Profile';
-});
+// Change vendor biography title - Check if Dokan exists
+if (function_exists('dokan')) {
+    add_filter('dokan_vendor_biography_title', function() {
+        return 'My Profile';
+    });
+}
 
 // Display units sold on product page
 add_action('woocommerce_single_product_summary', function() {
@@ -153,9 +99,9 @@ add_filter('wp_password_change_notification_email', function($email, $user, $blo
     return $email;
 }, 99, 3);
 
-// Calculate vendor total sales
+// Calculate vendor total sales - Check if WooCommerce exists
 function wbcom_vendor_total_sell($vendor_id) {
-    if (empty($vendor_id)) {
+    if (empty($vendor_id) || !class_exists('WC_Product_Query')) {
         return 0;
     }
 
@@ -178,11 +124,11 @@ function wbcom_vendor_total_sell($vendor_id) {
     return $count;
 }
 
-// Improved commission calculation
+// Improved commission calculation - Check if Dokan exists
 function wbcom_get_earning_by_order($order, $context = 'admin') {
     $earning = 0;
     
-    if (!$order || !is_a($order, 'WC_Order')) {
+    if (!$order || !is_a($order, 'WC_Order') || !function_exists('dokan')) {
         return $earning;
     }
     
@@ -230,7 +176,7 @@ function wbcom_get_earning_by_order($order, $context = 'admin') {
     return floatval(wc_format_decimal($earning));
 }
 
-// Control access modes for instructors
+// Control access modes for instructors - Check if LD Dashboard exists
 function wbcom_instructor_access_mode($access_modes) {
     return array(        
         'closed'    => __('Closed', 'ld-dashboard'),
@@ -241,66 +187,78 @@ function wbcom_instructor_access_mode($access_modes) {
     );
 }
 
-$user_roles = wp_get_current_user()->roles;
-if (in_array('ld_instructor', $user_roles)) {
-    add_filter('ld_dashboard_course_access_modes', 'wbcom_instructor_access_mode');
-}
-
-// Modify subscription price string
-add_filter('woocommerce_subscriptions_product_price_string', function($subscription_string, $product, $include) {
-    if ($include['sign_up_fee']) { 
-        $subscription_string = str_replace('sign-up fee', 'one time fee', $subscription_string);
+if (is_user_logged_in()) {
+    $user_roles = wp_get_current_user()->roles;
+    if (in_array('ld_instructor', $user_roles)) {
+        add_filter('ld_dashboard_course_access_modes', 'wbcom_instructor_access_mode');
     }
-    return $subscription_string;
-}, 10, 3);
-
-// Vendor total sale shortcode
-add_shortcode('vendor_total_sale', 'wbcom_display_vendor_total_sale');
-function wbcom_display_vendor_total_sale() {
-    ob_start();
-    $store_user = dokan()->vendor->get(get_query_var('author'));
-    ?>
-    <li class="dokan-total-sale">
-        <i class="fas fa-info-circle"></i>
-        <?php esc_html_e('Total Sales:', 'dokan'); ?>
-        <?php echo esc_html(number_format_i18n(wbcom_vendor_total_sell($store_user->get_id()), 0)); ?>
-    </li>
-    <?php
-    return ob_get_clean();
 }
 
-// Add body classes for vendor pages
-add_filter('body_class', function($classes) {
-    if (dokan_is_store_page()) {
-        global $wp;
-        if (dokan_is_store_review_page()) {
-            $classes[] = 'vendor-review';
-        } elseif (strpos($wp->request, 'biography')) {
-            $classes[] = 'vendor-biography';
+// Modify subscription price string - Check if WooCommerce Subscriptions exists
+if (class_exists('WC_Subscriptions')) {
+    add_filter('woocommerce_subscriptions_product_price_string', function($subscription_string, $product, $include) {
+        if (isset($include['sign_up_fee']) && $include['sign_up_fee']) { 
+            $subscription_string = str_replace('sign-up fee', 'one time fee', $subscription_string);
         }
+        return $subscription_string;
+    }, 10, 3);
+}
+
+// Vendor total sale shortcode - Check if Dokan exists
+if (function_exists('dokan')) {
+    add_shortcode('vendor_total_sale', 'wbcom_display_vendor_total_sale');
+    function wbcom_display_vendor_total_sale() {
+        ob_start();
+        $store_user = dokan()->vendor->get(get_query_var('author'));
+        ?>
+        <li class="dokan-total-sale">
+            <i class="fas fa-info-circle"></i>
+            <?php esc_html_e('Total Sales:', 'dokan'); ?>
+            <?php echo esc_html(number_format_i18n(wbcom_vendor_total_sell($store_user->get_id()), 0)); ?>
+        </li>
+        <?php
+        return ob_get_clean();
     }
-    return $classes;
-});
+}
 
-// Change order status labels
-add_filter('wc_order_statuses', function($order_statuses) {
-    $order_statuses['wc-completed'] = _x('Paid', 'Order status', 'woocommerce');
-    $order_statuses['wc-on-hold'] = _x('Pending Payment', 'Order status', 'woocommerce');
-    return $order_statuses;
-}, 20, 1);
-
-// Add instructor role to vendors after purchase
-add_action('woocommerce_thankyou', function($order_id) {
-    $order = wc_get_order($order_id);
-    if (is_a($order, 'WC_Order')) {
-        $user = $order->get_user();
-        if (is_a($user, 'WP_User')) {
-            if (in_array('vendor', $user->roles) && !in_array('ld_instructor', $user->roles)) {                
-                $user->add_role('ld_instructor');
+// Add body classes for vendor pages - Check if Dokan exists
+if (function_exists('dokan_is_store_page')) {
+    add_filter('body_class', function($classes) {
+        if (dokan_is_store_page()) {
+            global $wp;
+            if (function_exists('dokan_is_store_review_page') && dokan_is_store_review_page()) {
+                $classes[] = 'vendor-review';
+            } elseif (isset($wp->request) && strpos($wp->request, 'biography')) {
+                $classes[] = 'vendor-biography';
             }
         }
-    }
-});
+        return $classes;
+    });
+}
+
+// Change order status labels - Check if WooCommerce exists
+if (class_exists('WooCommerce')) {
+    add_filter('wc_order_statuses', function($order_statuses) {
+        $order_statuses['wc-completed'] = _x('Paid', 'Order status', 'woocommerce');
+        $order_statuses['wc-on-hold'] = _x('Pending Payment', 'Order status', 'woocommerce');
+        return $order_statuses;
+    }, 20, 1);
+}
+
+// Add instructor role to vendors after purchase - Check if WooCommerce exists
+if (class_exists('WooCommerce')) {
+    add_action('woocommerce_thankyou', function($order_id) {
+        $order = wc_get_order($order_id);
+        if (is_a($order, 'WC_Order')) {
+            $user = $order->get_user();
+            if (is_a($user, 'WP_User')) {
+                if (in_array('vendor', $user->roles) && !in_array('ld_instructor', $user->roles)) {                
+                    $user->add_role('ld_instructor');
+                }
+            }
+        }
+    });
+}
 
 // Disable new user notification emails
 function wbcom_disable_new_user_notifications() {
@@ -325,24 +283,30 @@ function wbcom_send_new_user_notifications($user_id, $notify = 'user') {
 // Disable password change emails
 add_filter('send_password_change_email', '__return_false');
 
-// Dokan dashboard customization
-add_action('dokan_product_edit_after_options', 'wbcom_dokan_preselect');
-function wbcom_dokan_preselect() {
-    ?>
-    <style>
-        label[for="_virtual"], label[for="_downloadable"] { opacity: 0; }
-    </style>
-    <script>
-        jQuery(function($) {
-            $('input[name=_virtual]').prop('checked', true);
-            $('input[name=_downloadable]').prop('checked', true);
-        });
-    </script>
-    <?php
+// Dokan dashboard customization - Check if Dokan exists
+if (function_exists('dokan')) {
+    add_action('dokan_product_edit_after_options', 'wbcom_dokan_preselect');
+    function wbcom_dokan_preselect() {
+        ?>
+        <style>
+            label[for="_virtual"], label[for="_downloadable"] { opacity: 0; }
+        </style>
+        <script>
+            jQuery(function($) {
+                $('input[name=_virtual]').prop('checked', true);
+                $('input[name=_downloadable]').prop('checked', true);
+            });
+        </script>
+        <?php
+    }
 }
 
-// Commission customization
+// Commission customization - Check if Dokan Pro exists
 add_action('wp_loaded', function() {
+    if (!class_exists('\WeDevs\DokanPro\Hooks')) {
+        return;
+    }
+    
     global $wp_filter;
     $hook = 'dokan_prepare_for_calculation';
     $class = '\WeDevs\DokanPro\Hooks';
@@ -350,7 +314,9 @@ add_action('wp_loaded', function() {
     if (isset($wp_filter[$hook])) {
         foreach ($wp_filter[$hook] as $priority => $callbacks) {
             foreach ($callbacks as $callback) {
-                if (is_array($callback['function']) && $callback['function'][0] instanceof $class) {
+                if (is_array($callback['function']) && 
+                    is_object($callback['function'][0]) && 
+                    $callback['function'][0] instanceof $class) {
                     remove_filter($hook, $callback['function'], $priority);
                 }
             }
@@ -358,74 +324,89 @@ add_action('wp_loaded', function() {
     }
 });
 
-add_filter('dokan_prepare_for_calculation', 'wbcom_add_combine_commission', 10, 6);
-function wbcom_add_combine_commission($earning, $commission_rate, $commission_type, $additional_fee, $product_price, $order_id) {
-    if ('combine' === $commission_type) {
-        if ($commission_rate > 100) {
-            return (float) wc_format_decimal($product_price);
+// Add combine commission - Check if Dokan exists
+if (function_exists('dokan')) {
+    add_filter('dokan_prepare_for_calculation', 'wbcom_add_combine_commission', 10, 6);
+    function wbcom_add_combine_commission($earning, $commission_rate, $commission_type, $additional_fee, $product_price, $order_id) {
+        if ('combine' === $commission_type) {
+            if ($commission_rate > 100) {
+                return (float) wc_format_decimal($product_price);
+            }
+
+            $item_total = get_post_meta($order_id, '_dokan_item_total', true);
+            $product_price = (float) wc_format_decimal($product_price);
+            
+            if ($order_id && $item_total) {
+                $order = wc_get_order($order_id);
+                if ($order) {
+                    $additional_fee = ($additional_fee / $item_total) * $product_price;
+                }
+            }
+
+            $earning = ($product_price * $commission_rate) / 100;
+            $total_earning = $earning + $additional_fee;
+            $earning = $product_price - $total_earning;
+
+            if ($earning < 0) {
+                $earning = 0;           
+            }
         }
 
-        $item_total = get_post_meta($order_id, '_dokan_item_total', true);
-        $product_price = (float) wc_format_decimal($product_price);
-        
-        if ($order_id && $item_total) {
-            $order = wc_get_order($order_id);
-            $additional_fee = ($additional_fee / $item_total) * $product_price;
-        }
-
-        $earning = ($product_price * $commission_rate) / 100;
-        $total_earning = $earning + $additional_fee;
-        $earning = $product_price - $total_earning;
-
-        if ($earning < 0) {
-            $earning = 0;           
-        }
+        return floatval(wc_format_decimal($earning));
     }
-
-    return floatval(wc_format_decimal($earning));
 }
 
-// Remove vendor coupon conflicts
+// Remove vendor coupon conflicts - Check if Dokan Pro exists
 add_action('init', function() {
-    remove_action('woocommerce_coupon_is_valid_for_product', array('WeDevs\DokanPro\Coupons\AdminCoupons', 'coupon_is_valid_for_product'), 15, 3);
+    if (class_exists('WeDevs\DokanPro\Coupons\AdminCoupons')) {
+        remove_action('woocommerce_coupon_is_valid_for_product', array('WeDevs\DokanPro\Coupons\AdminCoupons', 'coupon_is_valid_for_product'), 15, 3);
+    }
 });
 
-// Prevent duplicate orders
-add_action('woocommerce_checkout_process', 'wbcom_prevent_duplicate_order_within_one_hour');
-function wbcom_prevent_duplicate_order_within_one_hour() {
-    $current_user = wp_get_current_user();
-    
-    if (!$current_user->ID) {
-        return;
-    }
-    
-    $args = array(
-        'customer_id' => $current_user->ID,
-        'date_created' => '>' . (time() - HOUR_IN_SECONDS / 2),
-        'status' => array('on-hold', 'processing', 'completed'),
-        'limit' => 1
-    );
+// Prevent duplicate orders - Check if WooCommerce exists
+if (function_exists('wc_get_orders')) {
+    add_action('woocommerce_checkout_process', 'wbcom_prevent_duplicate_order_within_one_hour');
+    function wbcom_prevent_duplicate_order_within_one_hour() {
+        $current_user = wp_get_current_user();
+        
+        if (!$current_user->ID) {
+            return;
+        }
+        
+        $args = array(
+            'customer_id' => $current_user->ID,
+            'date_created' => '>' . (time() - HOUR_IN_SECONDS / 2),
+            'status' => array('on-hold', 'processing', 'completed'),
+            'limit' => 1
+        );
 
-    $orders = wc_get_orders($args);
-    
-    if (!empty($orders)) {
-        foreach ($orders as $order) {
-            if ($order->get_total() === WC()->cart->total) {
-                wc_add_notice(__('A similar order has been placed in the last hour. Please wait before placing a new order.', 'woocommerce'), 'error');
-                return;
+        $orders = wc_get_orders($args);
+        
+        if (!empty($orders)) {
+            foreach ($orders as $order) {
+                if (WC()->cart && $order->get_total() === WC()->cart->total) {
+                    wc_add_notice(__('A similar order has been placed in the last hour. Please wait before placing a new order.', 'woocommerce'), 'error');
+                    return;
+                }
             }
         }
     }
 }
 
-// PayPal gateway fee adjustment
-add_filter('dokan_orders_vendor_net_amount', function($net_amount, $vendor_earning, $gateway_fee, $tmp_order, $order) {
-    $net_amount = $net_amount + $gateway_fee;
-    return $net_amount;
-}, 50, 5);
+// PayPal gateway fee adjustment - Check if Dokan exists
+if (function_exists('dokan')) {
+    add_filter('dokan_orders_vendor_net_amount', function($net_amount, $vendor_earning, $gateway_fee, $tmp_order, $order) {
+        $net_amount = $net_amount + $gateway_fee;
+        return $net_amount;
+    }, 50, 5);
+}
 
-// Custom order status change handler
+// Custom order status change handler - Check if Dokan exists
 add_action('wp_loaded', function() {
+    if (!class_exists('\WeDevs\Dokan\Order\Hooks') || !function_exists('dokan')) {
+        return;
+    }
+    
     global $wp_filter;
     $hook = 'woocommerce_order_status_changed';
     $class = '\WeDevs\Dokan\Order\Hooks';
@@ -435,6 +416,7 @@ add_action('wp_loaded', function() {
         foreach ($wp_filter[$hook] as $priority => $callbacks) {
             foreach ($callbacks as $callback) {
                 if (is_array($callback['function']) && 
+                    is_object($callback['function'][0]) &&
                     $callback['function'][0] instanceof $class && 
                     $callback['function'][1] === $method) {
                     remove_filter($hook, $callback['function'], $priority);
@@ -444,66 +426,85 @@ add_action('wp_loaded', function() {
     }
 });
 
-add_action('woocommerce_order_status_changed', 'wbcom_custom_on_sub_order_change', 99, 4);
-function wbcom_custom_on_sub_order_change($order_id, $old_status, $new_status, $order) {
-    if ($order->get_parent_id() === 0) {
-        return;
-    }
-
-    $parent_order_id = $order->get_parent_id();
-    $sub_orders = dokan()->order->get_child_orders($parent_order_id);
-
-    if (!$sub_orders) {
-        return;
-    }
-
-    $all_complete = true;
-    foreach ($sub_orders as $sub_order) {
-        if ($sub_order->get_status() !== 'completed') {
-            $all_complete = false;
-            break;
+// Add custom order status change handler - Check if Dokan exists
+if (function_exists('dokan')) {
+    add_action('woocommerce_order_status_changed', 'wbcom_custom_on_sub_order_change', 99, 4);
+    function wbcom_custom_on_sub_order_change($order_id, $old_status, $new_status, $order) {
+        if (!method_exists($order, 'get_parent_id') || $order->get_parent_id() === 0) {
+            return;
         }
-    }
 
-    if ($all_complete) {
-        $parent_order = wc_get_order($parent_order_id);
-        $parent_order->update_status('wc-completed', __('Mark parent order completed when all child orders are completed.', 'dokan-lite'));
-    }
-}
+        $parent_order_id = $order->get_parent_id();
+        $sub_orders = dokan()->order->get_child_orders($parent_order_id);
 
-// Customize checkout fields based on cart total
-add_filter('woocommerce_checkout_fields', 'wbcom_customize_checkout_fields_based_on_cart_total');
-function wbcom_customize_checkout_fields_based_on_cart_total($fields) {
-    $cart_total = WC()->cart->get_cart_contents_total();
+        if (!$sub_orders) {
+            return;
+        }
 
-    if ($cart_total < 100) {
-        $allowed_fields = array('billing_first_name', 'billing_last_name', 'billing_email', 'billing_company', 'billing_postcode');
+        $all_complete = true;
+        foreach ($sub_orders as $sub_order) {
+            if ($sub_order->get_status() !== 'completed') {
+                $all_complete = false;
+                break;
+            }
+        }
 
-        foreach ($fields['billing'] as $key => $field) {
-            if (!in_array($key, $allowed_fields)) {
-                unset($fields['billing'][$key]);
-            } else {
-                $fields['billing'][$key]['required'] = ($key !== 'billing_company');
+        if ($all_complete) {
+            $parent_order = wc_get_order($parent_order_id);
+            if ($parent_order) {
+                $parent_order->update_status('wc-completed', __('Mark parent order completed when all child orders are completed.', 'dokan-lite'));
             }
         }
     }
-
-    return $fields;
 }
 
-// Validate postcode for low value carts
-add_action('woocommerce_checkout_process', 'wbcom_validate_postcode_for_low_value_cart');
-function wbcom_validate_postcode_for_low_value_cart() {
-    $cart_total = WC()->cart->get_cart_contents_total();
+// Customize checkout fields based on cart total - Check if WooCommerce exists
+if (class_exists('WooCommerce')) {
+    add_filter('woocommerce_checkout_fields', 'wbcom_customize_checkout_fields_based_on_cart_total');
+    function wbcom_customize_checkout_fields_based_on_cart_total($fields) {
+        if (!WC()->cart) {
+            return $fields;
+        }
+        
+        $cart_total = WC()->cart->get_cart_contents_total();
 
-    if ($cart_total < 100 && empty($_POST['billing_postcode'])) {
-        wc_add_notice(__('Please enter your Postcode.', 'woocommerce'), 'error');
+        if ($cart_total < 100) {
+            $allowed_fields = array('billing_first_name', 'billing_last_name', 'billing_email', 'billing_company', 'billing_postcode');
+
+            foreach ($fields['billing'] as $key => $field) {
+                if (!in_array($key, $allowed_fields)) {
+                    unset($fields['billing'][$key]);
+                } else {
+                    $fields['billing'][$key]['required'] = ($key !== 'billing_company');
+                }
+            }
+        }
+
+        return $fields;
     }
 }
 
-// Change postcode label
-add_filter('woocommerce_default_address_fields', 'wbcom_change_postcode_label');
-function wbcom_change_postcode_label($fields) {
-    $fields['postcode']['label'] = __('Postcode', 'woocommerce');
-    return $fields;
+// Validate postcode for low value carts - Check if WooCommerce exists
+if (class_exists('WooCommerce')) {
+    add_action('woocommerce_checkout_process', 'wbcom_validate_postcode_for_low_value_cart');
+    function wbcom_validate_postcode_for_low_value_cart() {
+        if (!WC()->cart) {
+            return;
+        }
+        
+        $cart_total = WC()->cart->get_cart_contents_total();
+
+        if ($cart_total < 100 && empty($_POST['billing_postcode'])) {
+            wc_add_notice(__('Please enter your Postcode.', 'woocommerce'), 'error');
+        }
+    }
+}
+
+// Change postcode label - Check if WooCommerce exists
+if (class_exists('WooCommerce')) {
+    add_filter('woocommerce_default_address_fields', 'wbcom_change_postcode_label');
+    function wbcom_change_postcode_label($fields) {
+        $fields['postcode']['label'] = __('Postcode', 'woocommerce');
+        return $fields;
+    }
 }
