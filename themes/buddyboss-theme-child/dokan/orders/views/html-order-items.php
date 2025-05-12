@@ -1,4 +1,14 @@
 <?php
+/**
+ * Dokan Order Items Template
+ *
+ * @since 2.9.0
+ *
+ * @package Dokan
+ *
+ * @var \WC_Order $order Order object
+ * @var string $legacy_order
+ */
 
 use WeDevs\DokanPro\Refund\ProcessAutomaticRefund;
 
@@ -47,6 +57,24 @@ if ( wc_tax_enabled() ) {
     $legacy_order = false;
     $order_taxes  = false;
 }
+
+$has_pending_request    = dokan_pro()->refund->has_pending_request( $order->get_id() );
+$pending_request_message = '';
+
+if ( $has_pending_request ) {
+    $refunds = new \WeDevs\DokanPro\Refund\Refunds(
+        [
+			'order_id' => $order->get_id(),
+			'status'   => \WeDevs\DokanPro\Refund\Refunds::STATUS_PENDING,
+			'limit'    => 1,
+		]
+    );
+    $pending_refunds = $refunds->get_refunds();
+    $pending_request_amount = isset( $pending_refunds[0] ) && is_a( $pending_refunds[0], 'WeDevs\DokanPro\Refund\Refund' ) ? $pending_refunds[0]->get_refund_amount() : 0;
+
+    // translators: %1$s: amount
+    $pending_request_message = sprintf( esc_html__( 'Refund request for %1$s submitted and is pending review.', 'dokan' ), wc_price( $pending_request_amount ) );
+}
 ?>
 <div class="woocommerce_order_items_wrapper wc-order-items-editable">
     <table cellpadding="0" cellspacing="0" class="woocommerce_order_items dokan-table dokan-table-strip">
@@ -81,7 +109,10 @@ if ( wc_tax_enabled() ) {
                     endforeach;
                 endif;
                 ?>
-                <th class="wc-order-edit-line-item" width="1%">&nbsp;</th>
+
+                <?php if ( $order->is_editable() ) : ?>
+                    <th class="wc-order-edit-line-item" width="1%">&nbsp;</th>
+                <?php endif; ?>
             </tr>
         </thead>
         <tbody id="order_line_items">
@@ -225,9 +256,9 @@ if ( wc_tax_enabled() ) {
         <?php if ( wc_tax_enabled() ) : ?>
             <?php foreach ( $order->get_tax_totals() as $code => $tax_item ) : ?>
                 <tr>
-                    <td><?php echo $tax_item->label; ?>:</td>
+                     <td><?php echo esc_html( $tax_item->label ); ?>:</td>
                     <td></td>
-                    <td class="total"><?php echo $tax_item->formatted_amount; ?></td>
+                    <td class="total"><?php echo wp_kses_post( $tax_item->formatted_amount ); ?></td>
                 </tr>
             <?php endforeach; ?>
         <?php endif; ?>
@@ -267,6 +298,13 @@ if ( wc_tax_enabled() ) {
 </div>
 
 <?php if ( current_user_can( 'dokan_manage_refund' ) && dokan_is_refund_allowed_to_approve( $order->get_id() ) ) : ?>
+     <?php if ( $has_pending_request ) : ?>
+    <div class="dokan-alert dokan-alert-info">
+        <p>
+            <?php echo $pending_request_message; ?>
+        </p>
+    </div>
+    <?php else : ?>
     <div class="wc-order-data-row wc-order-bulk-actions">
         <p class="add-items">
             <?php if ( ( $order->get_total() - $order->get_total_refunded() ) > 0 ) : ?>
@@ -275,6 +313,7 @@ if ( wc_tax_enabled() ) {
         </p>
         <div class="clear"></div>
     </div>
+    <?php endif; ?>
 
     <?php if ( ( $order->get_total() - $order->get_total_refunded() ) > 0 ) : ?>
         <div class="wc-order-data-row wc-order-refund-items" style="display: none;">

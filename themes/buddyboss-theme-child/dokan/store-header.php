@@ -9,10 +9,10 @@ $dokan_store_times = ! empty( $store_info['dokan_store_time'] ) ? $store_info['d
 $current_time      = dokan_current_datetime();
 $today             = strtolower( $current_time->format( 'l' ) );
 
-$dokan_appearance = get_option( 'dokan_appearance' );
-$profile_layout   = empty( $dokan_appearance['store_header_template'] ) ? 'default' : $dokan_appearance['store_header_template'];
-$dokan_store_address    = dokan_get_seller_short_address( $store_user->get_id(), false );
-$store_address    = empty( $dokan_store_address  ) ? wbcom_format_store_address( $store_user->get_id() ) : $dokan_store_address;
+$dokan_appearance    = get_option( 'dokan_appearance' );
+$profile_layout      = empty( $dokan_appearance['store_header_template'] ) ? 'default' : $dokan_appearance['store_header_template'];
+$dokan_store_address = dokan_get_seller_short_address( $store_user->get_id(), false );
+$store_address       = empty( $dokan_store_address  ) ? wbcom_format_store_address( $store_user->get_id() ) : $dokan_store_address;
 
 $dokan_store_time_enabled = isset( $store_info['dokan_store_time_enabled'] ) ? $store_info['dokan_store_time_enabled'] : '';
 $store_open_notice        = isset( $store_info['dokan_store_open_notice'] ) && ! empty( $store_info['dokan_store_open_notice'] ) ? $store_info['dokan_store_open_notice'] : __( 'Store Open', 'dokan-lite' );
@@ -37,8 +37,7 @@ if ( 'layout3' === $profile_layout ) {
     $no_banner_class      = '';
     $no_banner_class_tabs = '';
 }
-$store_avatar = '';
-$phone = empty( $store_user->get_phone() ) ? get_user_meta( $store_user->get_id(), '_wcv_store_phone', true ) : $store_user->get_phone();
+
 ?>
 <div class="dokan-profile-frame-wrapper">
     <div class="profile-frame<?php echo esc_attr( $no_banner_class ); ?>">
@@ -51,7 +50,7 @@ $phone = empty( $store_user->get_phone() ) ? get_user_meta( $store_user->get_id(
                     class="profile-info-img">
             <?php } else { ?>
                 <div class="profile-info-img dummy-image">
-                    <img src="<?php echo get_stylesheet_directory_uri();?>/assets/images/Vendor-default-banner.png">
+                    <img src="<?php echo esc_url( get_stylesheet_directory_uri() ); ?>/assets/images/Vendor-default-banner.png">
                 </div>
             <?php } ?>
 
@@ -66,13 +65,19 @@ $phone = empty( $store_user->get_phone() ) ? get_user_meta( $store_user->get_id(
                             </div>
                         <?php endif; ?>
                         <?php if ( ! empty( $store_user->get_shop_name() ) && 'default' === $profile_layout ) { ?>
-                            <h1 class="store-name"><?php echo esc_html( $store_user->get_store_name() ); ?><?php apply_filters( 'dokan_store_header_after_store_name', $store_user ); ?></h1>
+                            <h1 class="store-name">
+                                <?php echo esc_html( $store_user->get_store_name() ); ?>
+                                <?php do_action( 'dokan_store_header_after_store_name', $store_user ); ?>
+                            </h1>
                         <?php } ?>
                     </div>
 
                     <div class="profile-info">
                         <?php if ( ! empty( $store_user->get_shop_name() ) && 'default' !== $profile_layout ) { ?>
-                            <h1 class="store-name"><?php echo esc_html( $store_user->get_store_name() ); ?></h1>
+                            <h1 class="store-name">
+                                <?php echo esc_html( $store_user->get_store_name() ); ?>
+                                <?php do_action( 'dokan_store_header_after_store_name', $store_user ); ?>
+                            </h1>
                         <?php } ?>
 
                         <ul class="dokan-store-info">
@@ -82,14 +87,14 @@ $phone = empty( $store_user->get_phone() ) ? get_user_meta( $store_user->get_id(
                                 </li>
                             <?php } ?>
 
-                            <?php if ( ! dokan_is_vendor_info_hidden( 'phone' ) && ! empty( $phone ) ) { ?>
+                              <?php if ( ! dokan_is_vendor_info_hidden( 'phone' ) && ! empty( $store_user->get_phone() ) ) { ?>
                                 <li class="dokan-store-phone">
                                     <i class="fas fa-mobile-alt"></i>
-                                    <a href="tel:<?php echo esc_html( $phone ); ?>"><?php echo esc_html( $phone ); ?></a>
+                                    <a href="tel:<?php echo esc_html( $store_user->get_phone() ); ?>"><?php echo esc_html( $store_user->get_phone() ); ?></a>
                                 </li>
                             <?php } ?>
 
-                            <?php if ( ! dokan_is_vendor_info_hidden( 'email' ) && $store_user->show_email() === 'yes' ) { ?>
+                            <?php if ( ! dokan_is_vendor_info_hidden( 'email' ) && $store_user->show_email() ) { ?>
                                 <li class="dokan-store-email">
                                     <i class="far fa-envelope"></i>
                                     <a href="mailto:<?php echo esc_attr( antispambot( $store_user->get_email() ) ); ?>"><?php echo esc_attr( antispambot( $store_user->get_email() ) ); ?></a>
