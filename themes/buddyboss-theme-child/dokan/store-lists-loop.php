@@ -13,7 +13,7 @@
                     $store_phone              = $vendor->get_phone();
                     $store_info               = dokan_get_store_info( $seller->ID );
                     $store_address            = dokan_get_seller_short_address( $seller->ID );
-                    $store_banner_url         = $store_banner_id ? wp_get_attachment_image_src( $store_banner_id, $image_size ) : 'https://tpd.edu.au/wp-content/uploads/2022/01/bkwoods96-Vendor-default-banner-1950-x-450-px-1.png';
+                    $store_banner_url         = $store_banner_id ? wp_get_attachment_image_src( $store_banner_id, $image_size ) : DOKAN_PLUGIN_ASSEST . '/images/default-store-banner.png';
                     $show_store_open_close    = dokan_get_option( 'store_open_close', 'dokan_appearance', 'on' );
                     $dokan_store_time_enabled = isset( $store_info['dokan_store_time_enabled'] ) ? $store_info['dokan_store_time_enabled'] : '';
                     $store_open_is_on         = ( 'on' === $show_store_open_close && 'yes' === $dokan_store_time_enabled && ! $is_store_featured ) ? 'store_open_is_on' : '';
